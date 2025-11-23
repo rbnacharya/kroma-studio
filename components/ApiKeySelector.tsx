@@ -52,8 +52,8 @@ const ApiKeySelector: React.FC<ApiKeySelectorProps> = ({ onKeySelected }) => {
 
   if (checking) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-50">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
       </div>
     );
   }
@@ -61,20 +61,20 @@ const ApiKeySelector: React.FC<ApiKeySelectorProps> = ({ onKeySelected }) => {
   if (hasKey) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/90 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-8 shadow-2xl text-center">
-        <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-          <Key className="w-8 h-8 text-indigo-500" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/20 backdrop-blur-sm p-4">
+      <div className="bg-white border border-zinc-200 rounded-2xl max-w-md w-full p-8 shadow-2xl text-center">
+        <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Key className="w-8 h-8 text-indigo-600" />
         </div>
         
-        <h2 className="text-2xl font-bold text-white mb-2">Veo Studio Access</h2>
-        <p className="text-zinc-400 mb-8">
+        <h2 className="text-2xl font-bold text-zinc-900 mb-2">Veo Studio Access</h2>
+        <p className="text-zinc-500 mb-8">
           To generate videos with Veo 3.1, you need to connect a paid Google Cloud Project API key.
         </p>
 
         <button
           onClick={handleSelectKey}
-          className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 mb-4"
+          className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 mb-4"
         >
           Select API Key
         </button>
@@ -83,7 +83,7 @@ const ApiKeySelector: React.FC<ApiKeySelectorProps> = ({ onKeySelected }) => {
           href="https://ai.google.dev/gemini-api/docs/billing" 
           target="_blank" 
           rel="noopener noreferrer"
-          className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center justify-center gap-1 transition-colors"
+          className="text-xs text-zinc-400 hover:text-zinc-600 flex items-center justify-center gap-1 transition-colors"
         >
           Learn about billing <ExternalLink className="w-3 h-3" />
         </a>
