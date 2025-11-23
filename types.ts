@@ -22,6 +22,23 @@ export interface Project {
   aspectRatio: '16:9' | '9:16';
 }
 
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  credits: number;
+  plan: 'free' | 'creator' | 'director';
+}
+
+export interface PricingTier {
+  id: 'creator' | 'director';
+  name: string;
+  price: number;
+  credits: number;
+  features: string[];
+  popular?: boolean;
+}
+
 export interface GeminiError extends Error {
   message: string;
 }

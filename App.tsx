@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Aperture, Sparkles, User, Settings2, Video as VideoIcon, Plus, Trash2, Download, Loader2, Folder, ArrowLeft, Calendar, MoreVertical, Film } from 'lucide-react';
-import ApiKeySelector from './components/ApiKeySelector';
+import { Layout, Aperture, Sparkles, User, Settings2, Video as VideoIcon, Plus, Trash2, Loader2, Folder, ArrowLeft, Calendar, Film, LogOut, Coins } from 'lucide-react';
 import Timeline from './components/Timeline';
-import { Project, Scene } from './types';
+import Auth from './components/Auth';
+import Pricing from './components/Pricing';
+import { Project, Scene, UserProfile } from './types';
 import { generateScriptScenes, generateCharacterImage, generateVideoClip } from './services/gemini';
+import { subscribeToUserProfile, signOut, deductCredits } from './services/firebase';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+
+// Credit Costs
+const COSTS = {
+  SCRIPT: 10,
+  CHARACTER: 25,
+  VIDEO: 150
+};
 
 const App: React.FC = () => {
-  const [hasApiKey, setHasApiKey] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPricing, setShowPricing] = useState(false);
 
   // Project Management State
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -18,6 +30,35 @@ const App: React.FC = () => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+
+  // Auth Listener
+  useEffect(() => {
+    // If mocking, check local storage
+    const mock = localStorage.getItem('kroma_mock_user');
+    if (mock) {
+      setUser(JSON.parse(mock));
+    }
+
+    try {
+      const auth = getAuth();
+      const unsubscribe = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      // Mock mode fallback
+    }
+  }, []);
+
+  // Profile Listener
+  useEffect(() => {
+    if (user?.uid) {
+      const unsub = subscribeToUserProfile(user.uid, (p) => setProfile(p));
+      return () => unsub();
+    } else {
+      setProfile(null);
+    }
+  }, [user]);
 
   // Persist projects
   useEffect(() => {
@@ -63,11 +104,26 @@ const App: React.FC = () => {
     }
   };
 
+  // --- GENERATION HANDLERS WITH CREDIT CHECKS ---
+
+  const checkCredits = (cost: number) => {
+    if (!profile) return false;
+    if (profile.credits < cost) {
+      setShowPricing(true);
+      return false;
+    }
+    return true;
+  };
+
   const handleGenerateScript = async () => {
-    if (!currentProject || !currentProject.scriptPrompt) return;
+    if (!currentProject || !currentProject.scriptPrompt || !user) return;
+    
+    if (!checkCredits(COSTS.SCRIPT)) return;
+
     setLoading(true);
     setError(null);
     try {
+      await deductCredits(user.uid, COSTS.SCRIPT);
       const scenes = await generateScriptScenes(currentProject.scriptPrompt);
       updateCurrentProject({ scenes, step: 'character' });
     } catch (e: any) {
@@ -78,10 +134,14 @@ const App: React.FC = () => {
   };
 
   const handleGenerateCharacter = async () => {
-    if (!currentProject || !currentProject.characterPrompt) return;
+    if (!currentProject || !currentProject.characterPrompt || !user) return;
+    
+    if (!checkCredits(COSTS.CHARACTER)) return;
+
     setLoading(true);
     setError(null);
     try {
+      await deductCredits(user.uid, COSTS.CHARACTER);
       const b64 = await generateCharacterImage(currentProject.characterPrompt);
       updateCurrentProject({ characterImageBase64: b64 });
     } catch (e: any) {
@@ -96,9 +156,15 @@ const App: React.FC = () => {
   };
 
   const generateSceneVideo = async (sceneId: string) => {
-    if (!currentProject) return;
+    if (!currentProject || !user) return;
+    
+    if (!checkCredits(COSTS.VIDEO)) return;
+
     const scene = currentProject.scenes.find(s => s.id === sceneId);
     if (!scene) return;
+
+    // Deduct first
+    await deductCredits(user.uid, COSTS.VIDEO);
 
     // Update status to generating
     updateCurrentProject({
@@ -146,18 +212,21 @@ const App: React.FC = () => {
     });
   };
 
-  if (!hasApiKey) {
-    return <ApiKeySelector onKeySelected={() => setHasApiKey(true)} />;
+  // --- AUTH CHECK ---
+  if (!user) {
+    return <Auth />;
   }
 
   // --- DASHBOARD VIEW ---
   if (!currentProject) {
     return (
       <div className="min-h-screen bg-zinc-50 text-zinc-900 p-8 overflow-y-auto">
+        {showPricing && <Pricing userId={user.uid} onClose={() => setShowPricing(false)} />}
+        
         <div className="max-w-6xl mx-auto">
           <header className="flex items-center justify-between mb-12">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-200 rotate-3 transition-transform hover:rotate-6">
+              <div className="w-12 h-12 bg-rose-600 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-200 rotate-3 hover:rotate-6 transition-transform">
                 <Aperture className="w-7 h-7 text-white" />
               </div>
               <div>
@@ -165,13 +234,43 @@ const App: React.FC = () => {
                 <p className="text-zinc-500 text-sm font-medium">AI Director Suite</p>
               </div>
             </div>
+            
+            <div className="flex items-center gap-4">
+              <div 
+                onClick={() => setShowPricing(true)}
+                className="cursor-pointer bg-white border border-rose-200 px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm hover:shadow-md hover:border-rose-300 transition-all group"
+              >
+                <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center">
+                  <Coins className="w-4 h-4 text-rose-600 group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="text-right">
+                   <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Credits</div>
+                   <div className="text-sm font-bold text-rose-900 leading-none">{profile?.credits || 0}</div>
+                </div>
+              </div>
+
+              <div className="relative group">
+                 <button className="w-10 h-10 bg-zinc-900 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                    {profile?.displayName?.[0] || 'U'}
+                 </button>
+                 <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-zinc-200 rounded-xl shadow-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                    <button onClick={signOut} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 font-medium">
+                       <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                 </div>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex justify-between items-end mb-8">
+            <h2 className="text-xl font-bold text-zinc-800">Your Productions</h2>
             <button 
               onClick={() => setShowNewProjectModal(true)}
               className="bg-zinc-900 text-white hover:bg-zinc-800 px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-sm hover:shadow-md"
             >
               <Plus className="w-5 h-5" /> New Project
             </button>
-          </header>
+          </div>
 
           {showNewProjectModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/20 backdrop-blur-sm p-4">
@@ -274,9 +373,6 @@ const App: React.FC = () => {
                        }`}>
                          {project.step}
                        </span>
-                       <span className="px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-wider bg-zinc-100 text-zinc-500">
-                         {project.aspectRatio}
-                       </span>
                     </div>
                   </div>
                 </div>
@@ -291,6 +387,7 @@ const App: React.FC = () => {
   // --- EDITOR VIEW ---
   return (
     <div className="flex h-screen bg-zinc-50 text-zinc-900 overflow-hidden">
+      {showPricing && <Pricing userId={user.uid} onClose={() => setShowPricing(false)} />}
       
       {/* Sidebar Navigation */}
       <aside className="w-18 md:w-20 border-r border-zinc-200 flex flex-col items-center py-6 bg-white z-20 shadow-sm">
@@ -327,7 +424,7 @@ const App: React.FC = () => {
           />
         </nav>
 
-        <div className="mt-auto mb-4">
+        <div className="mt-auto mb-4 flex flex-col items-center gap-4">
            <button 
              onClick={() => {
                 updateCurrentProject({ aspectRatio: currentProject.aspectRatio === '16:9' ? '9:16' : '16:9' });
@@ -338,6 +435,13 @@ const App: React.FC = () => {
              <Settings2 size={20} />
              <span className="text-[9px] font-bold mt-0.5 font-mono">{currentProject.aspectRatio}</span>
            </button>
+
+           <div onClick={() => setShowPricing(true)} className="cursor-pointer flex flex-col items-center group">
+              <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 text-xs font-bold border border-rose-100 group-hover:scale-105 transition-transform">
+                {profile?.credits}
+              </div>
+              <span className="text-[9px] font-bold text-zinc-400 mt-1">CREDS</span>
+           </div>
         </div>
       </aside>
 
@@ -353,7 +457,7 @@ const App: React.FC = () => {
           {loading && (
              <div className="flex items-center gap-2 text-sm text-rose-600 bg-rose-50 px-4 py-1.5 rounded-full border border-rose-100 font-medium animate-pulse">
                <Loader2 className="w-4 h-4 animate-spin" />
-               Processing with Gemini...
+               Processing...
              </div>
           )}
         </header>
@@ -371,7 +475,7 @@ const App: React.FC = () => {
             <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="text-center space-y-2 mb-8">
                 <h2 className="text-3xl font-bold tracking-tight text-zinc-900">The Script</h2>
-                <p className="text-zinc-500 font-medium">Draft your vision. Gemini will transform your ideas into production-ready scenes.</p>
+                <p className="text-zinc-500 font-medium">Draft your vision. Cost: <span className="text-rose-600 font-bold">{COSTS.SCRIPT} Credits</span></p>
               </div>
               
               <div className="bg-white border border-zinc-200 rounded-3xl p-1 shadow-sm focus-within:ring-4 focus-within:ring-rose-100 focus-within:border-rose-300 transition-all">
@@ -392,7 +496,7 @@ const App: React.FC = () => {
                     className="bg-rose-600 text-white hover:bg-rose-700 px-6 py-2.5 rounded-xl font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
                   >
                     <Sparkles className="w-4 h-4" />
-                    Generate Scenes
+                    Generate ({COSTS.SCRIPT}c)
                   </button>
                 </div>
               </div>
@@ -437,7 +541,7 @@ const App: React.FC = () => {
               <div className="flex-1 space-y-8">
                 <div>
                    <h2 className="text-3xl font-bold mb-2 text-zinc-900">Star Casting</h2>
-                   <p className="text-zinc-500 font-medium">Design a character consistency reference. This image will anchor the visual style of your video.</p>
+                   <p className="text-zinc-500 font-medium">Design a character consistency reference. Cost: <span className="text-rose-600 font-bold">{COSTS.CHARACTER} Credits</span></p>
                 </div>
 
                 <div className="space-y-4">
@@ -455,7 +559,7 @@ const App: React.FC = () => {
                       disabled={loading || !currentProject.characterPrompt}
                       className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-semibold transition-all flex items-center gap-2 shadow-sm"
                     >
-                      <Sparkles className="w-4 h-4" /> Generate
+                      <Sparkles className="w-4 h-4" /> Generate ({COSTS.CHARACTER}c)
                     </button>
                   </div>
                 </div>
@@ -519,7 +623,7 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between mb-6">
                    <div>
                        <h2 className="text-2xl font-bold text-zinc-900">Production Studio</h2>
-                       <p className="text-zinc-500 text-sm">Generate and sequence your scenes.</p>
+                       <p className="text-zinc-500 text-sm">Cost per video: <span className="text-rose-600 font-bold">{COSTS.VIDEO} Credits</span></p>
                    </div>
                    <div className="flex gap-3">
                       <button onClick={addScene} className="text-sm font-medium flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl text-zinc-700 transition-colors shadow-sm">
